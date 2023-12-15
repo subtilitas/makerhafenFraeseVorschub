@@ -142,7 +142,7 @@
   <ImportGroup Label="ExtensionTargets" />
   <ProjectExtensions>
     <VisualStudio>
-      <UserProperties arduino.upload.port="usb:0/140000/0/2" config.Debug.customdebug_teensy41_debugger_type="universal" custom_teensy41_opt="o3std" />
+      <UserProperties arduino.upload.port="COM5" config.Debug.customdebug_teensy41_debugger_type="universal" custom_teensy41_opt="o2std" />
     </VisualStudio>
   </ProjectExtensions>
 </Project>
