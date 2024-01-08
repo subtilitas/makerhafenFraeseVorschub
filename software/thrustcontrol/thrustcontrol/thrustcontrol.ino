@@ -29,11 +29,11 @@
 //setup state machine
 #define MAIN_MENU           0
 #define MENU_ENDSTOPS        1
-#define MENU_SPEED_ACCEL          2
+#define MENU_SPEED_ACCEL    2
 #define SM_ENDSTOP_0        3
 #define SM_ENDSTOP_1        4
 #define SM_SPEED            5
-#define SM_SPEED_ACCEL      6
+#define SM_ACCEL            6
 #define MENU_POSITION		7
 
 
@@ -42,8 +42,9 @@
 #define DEBOUNCE_COUNT      25
 
 //physical parameters
-#define STEPS_PER_MM                1000
-#define MAX_SPEED_MM_PER_SECOND     20
+#define STEPS_PER_MM                400
+#define MAX_SPEED_MM_PER_SECOND     50
+#define MAX_ACCEL_MM_PER_SECOND_SQRD     100
 
 // breaking distance for analog move
 #define BREAKING_DISTANCE_STEPS     (3 * STEPS_PER_MM)
@@ -106,6 +107,7 @@ struct s_control_state {
 	volatile long position = 0;
 	volatile double steps_per_mm = STEPS_PER_MM;
 	volatile double mm_per_second_max = MAX_SPEED_MM_PER_SECOND;
+	volatile double mm_per_second_sqrd_max = MAX_ACCEL_MM_PER_SECOND_SQRD;
 } control_state;
 
 void run_stepper(void) {
@@ -181,6 +183,13 @@ void update_display(void) {
 }
 
 void run_setup() {
+	float new_speed = 0.0;
+	int new_accel = 0;
+	static int input_position = 0;
+	static char input_buffer[8];
+	float new_speed_parsed = 0.0;
+	float new_accel_parsed = 0.0;
+	int offset = 0;
 	//this is running on key release to prevent menu hopping
 	//otherwise the pressed key would continue selecting submenus
 	char key_pressed = customKeypad.getKey();
@@ -202,7 +211,7 @@ void run_setup() {
 		u8g2.drawStr(0, line_offsets[1], "[1] ENDSTOPS");
 		u8g2.drawStr(0, line_offsets[2], "[2] SPEEDS/ACC");
 		u8g2.drawStr(0, line_offsets[3], "[3] POSITION");
-		u8g2.drawStr(0, line_offsets[4], "[0] EXIT SETUP");
+		u8g2.drawStr(0, line_offsets[4], "[#] EXIT SETUP");
 
 		switch (key_pressed) {
 		case '1':
@@ -214,7 +223,7 @@ void run_setup() {
 		case '3':
 			setup_state = MENU_POSITION;
 			break;
-		case '0':
+		case '#':
 			state = STATE_STOPPED;
 			return;
 		}
@@ -222,10 +231,10 @@ void run_setup() {
 		//#define ENDSTOP_MENU        1
 	case MENU_ENDSTOPS:
 		u8g2.drawStr(0, line_offsets[0], "VIRTUAL ENDSTOPS");
-		u8g2.drawStr(0, line_offsets[2], "SET: [1]:VE0 [2]:VE1");
-		u8g2.drawStr(0, line_offsets[3], "CLR: [3]:VE0 [4]:VE1");
-		u8g2.drawStr(0, line_offsets[4], "[0]: MAIN MENU");		
-		
+		//u8g2.drawStr(0, line_offsets[2], "SET: [1]:VE0 [2]:VE1");
+		u8g2.drawStr(0, line_offsets[3], "CLR: [4]:VE0 [5]:VE1");
+		u8g2.drawStr(0, line_offsets[4], "[#]: MAIN MENU");
+
 		switch (key_pressed) {
 		case '1':
 			setup_state = SM_ENDSTOP_0;
@@ -233,19 +242,19 @@ void run_setup() {
 		case '2':
 			setup_state = SM_ENDSTOP_1;
 			break;
-		case '3':
+		case '4':
 			control_state.ve_min_enabled = false;
 			control_state.ve_min_position = 0;
 			setup_state = MAIN_MENU;
 			state = STATE_STOPPED;
 			return;
-		case '4':
+		case '5':
 			control_state.ve_max_enabled = false;
 			control_state.ve_max_position = 0;
 			setup_state = MAIN_MENU;
 			state = STATE_STOPPED;
 			return;
-		case '0':
+		case '#':
 			setup_state = MAIN_MENU;
 			return;
 		}
@@ -253,21 +262,32 @@ void run_setup() {
 		//#define SPEED_MENU          2
 	case MENU_SPEED_ACCEL:
 		u8g2.drawStr(0, line_offsets[0], "SPEEDS and ACCEL.:");
-		u8g2.drawStr(0, line_offsets[4], "[0] MAIN MENU");
+		u8g2.drawStr(0, line_offsets[2], "[1]SET SPEED");
+		u8g2.drawStr(0, line_offsets[3], "[2]SET ACCEL");
+		u8g2.drawStr(0, line_offsets[4], "[#] MAIN MENU");
 
 		switch (key_pressed) {
-		case '0':
+	case '1':
+			setup_state = SM_SPEED;
+			//clear speed value @ entry
+			new_speed = 0.0;
+			memset(input_buffer, 0, 8);
+			input_position = 0;
+			break;
+		case '2':
+			setup_state = SM_ACCEL;
+			break;
+		case '#':
 			setup_state = MAIN_MENU;
 			return;
 		}
-		break;
 		//#define SM_ENDSTOP_0        3
 	case SM_ENDSTOP_0:
 		u8g2.drawStr(0, line_offsets[0], "VIRTUAL ENDSTOP 0:");
-		u8g2.drawStr(0, line_offsets[4], "[0] MAIN MENU");
+		u8g2.drawStr(0, line_offsets[4], "[#] MAIN MENU");
 
 		switch (key_pressed) {
-		case '0':
+		case '#':
 			setup_state = MAIN_MENU;
 			return;
 		}
@@ -275,49 +295,108 @@ void run_setup() {
 		//#define SM_ENDSTOP_1        4
 	case SM_ENDSTOP_1:
 		u8g2.drawStr(0, line_offsets[0], "VIRTUAL ENDSTOP 1:");
-		u8g2.drawStr(0, line_offsets[4], "[0] MAIN MENU");
+		u8g2.drawStr(0, line_offsets[4], "[#] MAIN MENU");
 
 		switch (key_pressed) {
-		case '0':
+		case '#':
 			setup_state = MAIN_MENU;
 			return;
 		}
 		break;
 		//#define SM_SPEED            5
 	case SM_SPEED:
-		u8g2.drawStr(0, line_offsets[0], "SPEED:");
-		u8g2.drawStr(0, line_offsets[4], "[0] MAIN MENU");
+		u8g2.drawStr(0, line_offsets[0], "SET SPEED (<=50mm/s)");
 
-		switch (key_pressed) {
-		case '0':
+		u8g2.drawStr(0, line_offsets[1], String(String("CUR: ") + String(control_state.mm_per_second_max) + String("mm/s")).c_str());
+		u8g2.drawStr(0, line_offsets[2], String(String("NEW: ") + String(input_buffer) + String("mm/s")).c_str());
+		u8g2.drawStr(0, line_offsets[3], "[A] ACCEPT [C] CLEAR");
+		u8g2.drawStr(0, line_offsets[4], "[#] MAIN MENU");
+
+		switch(key_pressed){
+		
+		case 'A':
+			new_speed_parsed = String(input_buffer).toFloat();
+			if (new_speed_parsed > 0.0 && new_speed_parsed <= MAX_SPEED_MM_PER_SECOND) {
+				control_state.mm_per_second_max = new_speed_parsed;
+			}
+			input_position = 0;
+			memset(input_buffer, 0, 8);
+			break;
+		case 'C':
+			memset(input_buffer, 0, 8);
+			input_position = 0;
+			break;
+		case '#':
 			setup_state = MAIN_MENU;
 			return;
+		default:
+			if (key_pressed != '\0' && input_position < 7 &&
+				key_pressed != 'B'&& key_pressed != 'D') {
+				if (key_pressed == '*') {
+					key_pressed = '.';
+				}
+				input_buffer[input_position++] = key_pressed;
+			}
 		}
 		break;
-		//#define SM_SPEED_ACCEL      6
-	case SM_SPEED_ACCEL:
-		u8g2.drawStr(0, line_offsets[0], "ACCELERATION:");
-		u8g2.drawStr(0, line_offsets[4], "[0] MAIN MENU");
+		//#define SM_ACCEL      6
+	case SM_ACCEL:
+		u8g2.drawStr(0, line_offsets[0], String(String("SET ACCEL (<=") + String(MAX_ACCEL_MM_PER_SECOND_SQRD) + String("mms2)")).c_str());
+
+		u8g2.drawStr(0, line_offsets[1], String(String("CUR: ") + String(control_state.mm_per_second_sqrd_max) + String("mms2")).c_str());
+		u8g2.drawStr(0, line_offsets[2], String(String("NEW: ") + String(input_buffer) + String("mms2")).c_str());
+		u8g2.drawStr(0, line_offsets[3], "[A] ACCEPT [C] CLEAR");
+		u8g2.drawStr(0, line_offsets[4], "[#] MAIN MENU");
 
 		switch (key_pressed) {
-		case '0':
+
+		case 'A':
+			new_accel_parsed = String(input_buffer).toInt();
+			//Serial.println(input_buffer);
+			if (new_accel_parsed > 0 && new_accel_parsed <= MAX_ACCEL_MM_PER_SECOND_SQRD) {
+				control_state.mm_per_second_sqrd_max = new_accel_parsed;
+				stepper.setAcceleration(new_accel_parsed* STEPS_PER_MM);
+			}
+			input_position = 0;
+			memset(input_buffer, 0, 8);
+			break;
+		case 'C':
+			memset(input_buffer, 0, 8);
+			input_position = 0;
+			break;
+		case '#':
 			setup_state = MAIN_MENU;
 			return;
+		default:
+			if (key_pressed != '\0' && input_position < 7 &&
+				key_pressed != 'B' && key_pressed != 'D' && key_pressed != '*') {
+				input_buffer[input_position++] = key_pressed;
+			}
 		}
 		break;
 		//#define SM_SET_POSITION     7
 	case MENU_POSITION:
-		u8g2.drawStr(0, line_offsets[0], "SET POSITION:");
-		u8g2.drawStr(0, line_offsets[4], "[0] MAIN MENU");
-
+		u8g2.drawStr(0, line_offsets[0], "CLEAR POSITION:");
+		offset = u8g2.drawStr(0, line_offsets[1], "Pos: ");
+		offset += u8g2.drawStr(offset, line_offsets[1], String(control_state.position / control_state.steps_per_mm).c_str());
+		u8g2.drawStr(offset, line_offsets[1], "mm");
+		u8g2.drawStr(0, line_offsets[2], "[C] CLR POS (0.00)");
+		u8g2.drawStr(0, line_offsets[4], "[#] MAIN MENU");
+		
 		switch (key_pressed) {
-		case '0':
+		case '#':
 			setup_state = MAIN_MENU;
 			return;
+		case 'C':
+			control_state.position = 0;
+			stepper.setCurrentPosition(0);
+			Serial.println("key_pressed");
+			break;
 		}
 		break;
 
 	}
+	
 
 	u8g2.sendBuffer();
 }
@@ -341,7 +420,7 @@ void setup(void) {
 	u8g2.setFont(u8g2_font_6x12_te);
 	u8g2.setFontDirection(0);
 
-	stepper.setAcceleration(10000);
+	stepper.setAcceleration(MAX_ACCEL_MM_PER_SECOND_SQRD * STEPS_PER_MM);
 	stepper.setMaxSpeed(STEPS_PER_MM * MAX_SPEED_MM_PER_SECOND);
 
 	Timer3.initialize(2);
