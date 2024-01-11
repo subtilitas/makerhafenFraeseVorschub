@@ -42,8 +42,8 @@
 #define DEBOUNCE_COUNT      25
 
 //physical parameters
-#define STEPS_PER_MM                400
-#define MAX_SPEED_MM_PER_SECOND     50
+#define STEPS_PER_MM                7994.84899
+#define MAX_SPEED_MM_PER_SECOND     8
 #define MAX_ACCEL_MM_PER_SECOND_SQRD     100
 
 // breaking distance for analog move
